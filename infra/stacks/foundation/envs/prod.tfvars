@@ -1,8 +1,8 @@
 env                = "prod"
-domain_zone_name   = "example.com"     # <- your Route 53 zone
-site_hostname      = "www.example.com" # <- or the apex, e.g. "example.com"
-ses_from           = "bookings@example.com"
-alert_email        = "you@example.com"
+domain_zone_name   = "afterhourzkutz.com"     # <- your Route 53 zone
+site_hostname      = "www.afterhourzkutz.com" # <- or the apex, e.g. "afterhourzkutz.com"
+ses_from           = "bookings@afterhourzkutz.com"
+alert_email        = "dwilliam700@icloud.com"
 monthly_budget_usd = 75
 
 # Prod is never taken down automatically: the reaper only reports.

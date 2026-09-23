@@ -1,5 +1,5 @@
 env              = "dev"
-admin_emails     = "you@gmail.com" # Google account(s) allowed into /admin
+admin_emails     = "dw602481@gmail.com" # Google account(s) allowed into /admin
 google_client_id = ""              # OAuth Web client ID (docs/SETUP.md, step 5)
 # ecr_repository_url and state_bucket are passed by CI from repo variables.
 

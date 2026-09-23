@@ -1,5 +1,5 @@
 env              = "prod"
-admin_emails     = "you@gmail.com"
+admin_emails     = "dw602481@gmail.com"
 google_client_id = ""
 vpc_cidr         = "10.30.0.0/16"
 
