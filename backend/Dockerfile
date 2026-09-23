@@ -3,11 +3,15 @@ FROM python:3.11-slim AS builder
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /build
 COPY requirements.txt .
-RUN python -m venv /opt/venv && /opt/venv/bin/pip install -r requirements.txt
+RUN python -m venv /opt/venv && /opt/venv/bin/pip install -r requirements.txt \
+ && /opt/venv/bin/pip uninstall -y setuptools wheel
 
 FROM python:3.11-slim
 ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
-RUN useradd --system --uid 10001 --no-create-home app
+# The runtime needs no packaging tools. Removing pip/setuptools/wheel drops their vendored
+# libraries, which is where Trivy keeps finding fixable HIGH CVEs in the base image.
+RUN /usr/local/bin/python -m pip uninstall -y setuptools wheel pip \
+ && useradd --system --uid 10001 --no-create-home app
 WORKDIR /srv
 COPY --from=builder /opt/venv /opt/venv
 COPY app ./app
