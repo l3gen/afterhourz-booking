@@ -8,13 +8,13 @@ terraform {
   }
   # After the first apply, migrate this state into the bucket it created:
   #   1) uncomment the backend block  2) terraform init -migrate-state
-  # backend "s3" {
-  #   bucket       = "afterhourz-tfstate-<account-id>"
-  #   key          = "bootstrap/terraform.tfstate"
-  #   region       = "us-east-1"
-  #   encrypt      = true
-  #   use_lockfile = true
-  # }
+  backend "s3" {
+    bucket       = "afterhourz-tfstate-283335735389"
+    key          = "bootstrap/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+  }
 }
 
 provider "aws" {
