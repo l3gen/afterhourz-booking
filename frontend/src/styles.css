@@ -116,3 +116,16 @@ input[type='checkbox'] { width: 1.1rem; height: 1.1rem; padding: 0; }
 .hours { display: grid; gap: 0.5rem; max-width: 520px; }
 .hours-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 .hours-row > label { min-width: 9.5rem; display: flex; align-items: center; gap: 0.5rem; }
+
+/* --- compact card docked to the bottom (keeps the background photos visible) --- */
+.dock-bottom {
+  min-height: calc(100vh - 10rem); min-height: calc(100svh - 10rem);
+  display: flex; flex-direction: column; justify-content: flex-end;
+}
+.panel.compact {
+  width: 100%; max-width: 440px; margin: 0 auto; padding: 0.9rem 1rem;
+  background: rgba(16, 16, 18, 0.78);
+}
+.panel.compact h1 { font-size: 1.35rem; margin-bottom: 0.6rem; }
+.panel.compact .appt-list { gap: 0.4rem; max-height: 40vh; overflow-y: auto; }
+.panel.compact .appt-list li { padding: 0.55rem 0.8rem; font-size: 0.92rem; }
