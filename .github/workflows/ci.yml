@@ -68,7 +68,7 @@ jobs:
       - name: Smoke test the container starts and answers health checks
         run: |
           docker run -d --name api -p 8000:8000 -e ENV=local afterhourz-api:ci
-          for i in $(seq 1 20); do curl -fs localhost:8000/api/health && exit 0; sleep 1; done
+          for _ in $(seq 1 20); do curl -fs localhost:8000/api/health && exit 0; sleep 1; done
           docker logs api; exit 1
       - name: Trivy vulnerability scan (fails on fixable HIGH/CRITICAL)
         run: |

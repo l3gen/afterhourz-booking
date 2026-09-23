@@ -112,9 +112,11 @@ jobs:
         working-directory: .
         run: |
           p=/afterhourz/${{ inputs.env }}
-          echo "bucket=$(aws ssm get-parameter --name $p/web_bucket --query Parameter.Value --output text)" >> "$GITHUB_OUTPUT"
-          echo "dist=$(aws ssm get-parameter --name $p/cloudfront_distribution_id --query Parameter.Value --output text)" >> "$GITHUB_OUTPUT"
-          echo "url=$(aws ssm get-parameter --name $p/site_url --query Parameter.Value --output text)" >> "$GITHUB_OUTPUT"
+          {
+            echo "bucket=$(aws ssm get-parameter --name "$p/web_bucket" --query Parameter.Value --output text)"
+            echo "dist=$(aws ssm get-parameter --name "$p/cloudfront_distribution_id" --query Parameter.Value --output text)"
+            echo "url=$(aws ssm get-parameter --name "$p/site_url" --query Parameter.Value --output text)"
+          } >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         if: inputs.deploy_frontend
         with:
