@@ -46,7 +46,7 @@ jobs:
         run: |
           aws ecr describe-images --repository-name afterhourz-api --image-ids imageTag=${{ steps.tag.outputs.tag }} >/dev/null \
             || { echo "::error::No image tagged ${{ steps.tag.outputs.tag }}. Merge to main first so it gets built and tested in dev."; exit 1; }
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
         with:
           terraform_version: "~1.13"
           terraform_wrapper: false
