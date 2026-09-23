@@ -14,7 +14,7 @@ variable "log_retention_days" { type = number }
 data "archive_file" "zip" {
   type        = "zip"
   source_dir  = "${path.module}/../../../lambdas/reminders"
-  output_path = "${path.module}/.build/reminders.zip"
+  output_path = "${path.root}/.build/reminders.zip"
 }
 
 resource "aws_cloudwatch_log_group" "fn" {

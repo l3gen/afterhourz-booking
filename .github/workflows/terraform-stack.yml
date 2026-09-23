@@ -60,7 +60,7 @@ jobs:
           echo "has_changes=$([ "$code" = "2" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           terraform show -no-color tfplan | tee plan.txt
           { echo '### Plan: ${{ inputs.env }} / ${{ inputs.stack }}'; echo '```hcl'; head -c 60000 plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-      - name: Save plan (with the provider lock file, so apply uses identical providers)
+      - name: Save plan (with the provider lock file and Lambda zips, so apply uses identical inputs)
         if: steps.plan.outputs.has_changes == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -68,6 +68,8 @@ jobs:
           path: |
             infra/stacks/${{ inputs.stack }}/tfplan
             infra/stacks/${{ inputs.stack }}/.terraform.lock.hcl
+            infra/stacks/${{ inputs.stack }}/.build/
+          include-hidden-files: true
           retention-days: 1
 
   apply:

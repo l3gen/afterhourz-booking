@@ -113,12 +113,14 @@ resource "aws_budgets_budget" "monthly" {
     notification_type         = "FORECASTED"
     subscriber_sns_topic_arns = [aws_sns_topic.alerts.arn]
   }
+  # AWS Budgets allows only ONE SNS subscriber per notification. At 100% actual spend the
+  # breach topic triggers the reaper, which reports what it did to the alerts topic (email).
   notification {
     comparison_operator       = "GREATER_THAN"
     threshold                 = 100
     threshold_type            = "PERCENTAGE"
     notification_type         = "ACTUAL"
-    subscriber_sns_topic_arns = [aws_sns_topic.alerts.arn, aws_sns_topic.breach.arn]
+    subscriber_sns_topic_arns = [aws_sns_topic.breach.arn]
   }
 }
 
@@ -173,7 +175,7 @@ data "aws_iam_policy_document" "scheduler_trust" {
 data "archive_file" "reaper" {
   type        = "zip"
   source_dir  = "${path.module}/../../../lambdas/reaper"
-  output_path = "${path.module}/.build/reaper.zip"
+  output_path = "${path.root}/.build/reaper.zip"
 }
 
 resource "aws_cloudwatch_log_group" "reaper" {
@@ -291,7 +293,7 @@ data "archive_file" "analyst" {
   count       = var.enable_cost_analyst ? 1 : 0
   type        = "zip"
   source_dir  = "${path.module}/../../../lambdas/cost_analyst"
-  output_path = "${path.module}/.build/cost_analyst.zip"
+  output_path = "${path.root}/.build/cost_analyst.zip"
 }
 
 resource "aws_cloudwatch_log_group" "analyst" {
