@@ -80,6 +80,23 @@ resource "aws_iam_role_policy" "plan_extra" {
   policy = data.aws_iam_policy_document.plan_extra.json
 }
 
+# Terraform refresh reads the app secret's value (aws_secretsmanager_secret_version), which
+# ReadOnlyAccess does not allow. Scoped to this project's secrets only. Note the plan role can
+# already read Terraform state, which holds the same value, so this adds no new exposure.
+data "aws_iam_policy_document" "plan_secrets" {
+  statement {
+    sid       = "RefreshProjectSecrets"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = ["arn:aws:secretsmanager:*:${local.account_id}:secret:afterhourz/*"]
+  }
+}
+
+resource "aws_iam_role_policy" "plan_secrets" {
+  role   = aws_iam_role.gha["plan"].id
+  name   = "read-project-secrets"
+  policy = data.aws_iam_policy_document.plan_secrets.json
+}
+
 # ---- deploy roles: service-scoped (NOT AdministratorAccess) ----------------------------
 data "aws_iam_policy_document" "deploy" {
   statement {
