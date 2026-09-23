@@ -1,0 +1,7 @@
+# Replace with your GitHub username (or a team). With "Require review from Code Owners" enabled
+# in branch protection, changes to these paths cannot merge without that person's approval.
+*                 @l3gen
+/infra/           @l3gen
+/.github/         @l3gen
+/backend/app/payments.py  @l3gen
+/backend/app/auth.py      @l3gen

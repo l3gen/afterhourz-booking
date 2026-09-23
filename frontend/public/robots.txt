@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /my-appointments
+Disallow: /api/
+
+Sitemap: https://www.example.com/sitemap.xml

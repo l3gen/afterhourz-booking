@@ -1,0 +1,124 @@
+name: Dev TTL destroy
+
+# Destroys the dev API stack once it has been up for DEV_TTL_HOURS (default 4).
+#
+# Runs hourly and does nothing most of the time. The stack's age is the load
+# balancer's CreatedTime: the ALB is created and destroyed with the stack, so no
+# separate bookkeeping, tag or parameter is needed. Nothing up means nothing to do.
+#
+# This replaces waiting for the 03:00 nightly job. That job still runs as a backstop,
+# as does the AWS-side reaper Lambda at 4am ET, which works even if GitHub is down or
+# has paused scheduled workflows (it does so after 60 idle days).
+#
+# Set the repository variable DEV_TTL_HOURS to change the lease. Run manually with
+# force=true to tear down immediately regardless of age.
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Destroy now, ignoring the TTL"
+        type: boolean
+        default: false
+      ttl_hours:
+        description: "Override the TTL for this run only"
+        type: string
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: dev-environment
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    environment: dev
+    outputs:
+      expired: ${{ steps.age.outputs.expired }}
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/afterhourz-gha-deploy-dev
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: How long has dev been up?
+        id: age
+        env:
+          FORCE: ${{ inputs.force }}
+          TTL_INPUT: ${{ inputs.ttl_hours }}
+          TTL_VAR: ${{ vars.DEV_TTL_HOURS }}
+          REGION: ${{ vars.AWS_REGION }}
+        run: |
+          set -uo pipefail
+          TTL="${TTL_INPUT:-${TTL_VAR:-4}}"
+
+          created="$(aws elbv2 describe-load-balancers \
+                       --region "$REGION" --names afterhourz-dev \
+                       --query 'LoadBalancers[0].CreatedTime' --output text 2>/dev/null)" || created=""
+
+          if [ -z "$created" ] || [ "$created" = "None" ]; then
+            echo "expired=false" >> "$GITHUB_OUTPUT"
+            echo "Dev is already down. Nothing to do." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          now=$(date -u +%s)
+          start=$(date -u -d "$created" +%s)
+          mins=$(( (now - start) / 60 ))
+          age=$(printf '%dh %02dm' $((mins / 60)) $((mins % 60)))
+
+          if [ "$FORCE" = "true" ]; then
+            echo "expired=true" >> "$GITHUB_OUTPUT"
+            echo "Forced teardown. Dev has been up $age." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$mins" -ge $((TTL * 60)) ]; then
+            echo "expired=true" >> "$GITHUB_OUTPUT"
+            echo "Dev has been up $age, past its ${TTL}h lease. Destroying." >> "$GITHUB_STEP_SUMMARY"
+          else
+            left=$(( TTL * 60 - mins ))
+            echo "expired=false" >> "$GITHUB_OUTPUT"
+            printf 'Dev has been up %s of its %sh lease. %dh %02dm left.\n' \
+              "$age" "$TTL" $((left / 60)) $((left % 60)) >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  destroy:
+    needs: check
+    if: needs.check.outputs.expired == 'true'
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_VAR_state_bucket: ${{ vars.TF_STATE_BUCKET }}
+      TF_VAR_ecr_repository_url: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/afterhourz-api
+      TF_VAR_image_tag: none
+    defaults:
+      run:
+        working-directory: infra/stacks/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/afterhourz-gha-deploy-dev
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.13"
+          terraform_wrapper: false
+
+      - run: terraform init -input=false -backend-config=envs/dev.backend.hcl -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      - name: Destroy dev API stack
+        run: terraform destroy -auto-approve -input=false -var-file=envs/dev.tfvars
+
+      # Terraform only removes what it created and tracks. This asks AWS directly.
+      - name: Verify nothing is still billing
+        working-directory: .
+        run: |
+          chmod +x infra/scripts/verify-teardown.sh
+          infra/scripts/verify-teardown.sh dev | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - run: echo "Lease expired, dev torn down. Run 'Dev up' to bring it back." >> "$GITHUB_STEP_SUMMARY"

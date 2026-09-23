@@ -1,0 +1,154 @@
+name: Terraform stack (reusable)
+
+# plan -> (approval, if the environment requires one) -> apply the EXACT saved plan.
+# For the api stack it can also publish the frontend inside the same approved job, so a
+# production release needs exactly one approval.
+on:
+  workflow_call:
+    inputs:
+      env:
+        type: string
+        required: true
+      stack:
+        type: string
+        required: true
+      image_tag:
+        type: string
+        default: none
+      deploy_frontend:
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_VAR_state_bucket: ${{ vars.TF_STATE_BUCKET }}
+  TF_VAR_ecr_repository_url: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/afterhourz-api
+  TF_VAR_image_tag: ${{ inputs.image_tag }}
+
+jobs:
+  plan:
+    name: plan ${{ inputs.env }}/${{ inputs.stack }}
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.plan.outputs.has_changes }}
+    defaults:
+      run:
+        working-directory: infra/stacks/${{ inputs.stack }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/afterhourz-gha-plan
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.13"
+          terraform_wrapper: false
+      - run: terraform init -input=false -backend-config=envs/${{ inputs.env }}.backend.hcl -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+      - name: Plan
+        id: plan
+        run: |
+          set +e
+          terraform plan -input=false -lock=false -no-color -detailed-exitcode -out=tfplan -var-file=envs/${{ inputs.env }}.tfvars
+          code=$?
+          set -e
+          if [ "$code" = "1" ]; then exit 1; fi
+          echo "has_changes=$([ "$code" = "2" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          terraform show -no-color tfplan | tee plan.txt
+          { echo '### Plan: ${{ inputs.env }} / ${{ inputs.stack }}'; echo '```hcl'; head -c 60000 plan.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Save plan (with the provider lock file, so apply uses identical providers)
+        if: steps.plan.outputs.has_changes == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ inputs.env }}-${{ inputs.stack }}
+          path: |
+            infra/stacks/${{ inputs.stack }}/tfplan
+            infra/stacks/${{ inputs.stack }}/.terraform.lock.hcl
+          retention-days: 1
+
+  apply:
+    name: apply ${{ inputs.env }}/${{ inputs.stack }}
+    needs: plan
+    if: needs.plan.outputs.has_changes == 'true' || inputs.deploy_frontend
+    runs-on: ubuntu-latest
+    # 'production' has required reviewers configured in GitHub, so the run pauses here until
+    # you approve. 'dev' has no reviewers.
+    environment: ${{ inputs.env == 'prod' && 'production' || 'dev' }}
+    defaults:
+      run:
+        working-directory: infra/stacks/${{ inputs.stack }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/afterhourz-gha-deploy-${{ inputs.env }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.13"
+          terraform_wrapper: false
+      - name: Download the reviewed plan
+        if: needs.plan.outputs.has_changes == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ inputs.env }}-${{ inputs.stack }}
+          path: infra/stacks/${{ inputs.stack }}
+      - run: terraform init -input=false -backend-config=envs/${{ inputs.env }}.backend.hcl -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+      - name: Apply exactly what was planned
+        if: needs.plan.outputs.has_changes == 'true'
+        run: terraform apply -input=false tfplan
+      - name: Record the deployed image tag
+        if: inputs.stack == 'api' && inputs.image_tag != 'none'
+        run: aws ssm put-parameter --name /afterhourz/${{ inputs.env }}/image_tag --type String --overwrite --value "${{ inputs.image_tag }}"
+
+      # ---------------------------------------------------------------- frontend
+      - name: Look up site details
+        if: inputs.deploy_frontend
+        id: site
+        working-directory: .
+        run: |
+          p=/afterhourz/${{ inputs.env }}
+          echo "bucket=$(aws ssm get-parameter --name $p/web_bucket --query Parameter.Value --output text)" >> "$GITHUB_OUTPUT"
+          echo "dist=$(aws ssm get-parameter --name $p/cloudfront_distribution_id --query Parameter.Value --output text)" >> "$GITHUB_OUTPUT"
+          echo "url=$(aws ssm get-parameter --name $p/site_url --query Parameter.Value --output text)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        if: inputs.deploy_frontend
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build the site
+        if: inputs.deploy_frontend
+        working-directory: frontend
+        env:
+          VITE_GA_ID: ${{ vars.VITE_GA_ID }}
+          VITE_GSC_VERIFICATION: ${{ vars.VITE_GSC_VERIFICATION }}
+        run: |
+          bash scripts/prepare-seo.sh "${{ steps.site.outputs.url }}" "${{ inputs.env }}"
+          npm ci
+          npm run build
+      - name: Publish to S3 and refresh CloudFront
+        if: inputs.deploy_frontend
+        working-directory: frontend
+        run: |
+          B=s3://${{ steps.site.outputs.bucket }}
+          # hashed assets first (immutable), so a new index.html never points at missing files
+          aws s3 sync dist/assets $B/assets --cache-control "public,max-age=31536000,immutable"
+          aws s3 sync dist $B --delete --exclude "assets/*" --cache-control "public,max-age=300"
+          aws s3 cp dist/index.html $B/index.html --cache-control "no-cache"
+          aws cloudfront create-invalidation --distribution-id ${{ steps.site.outputs.dist }} --paths "/*" >/dev/null
+      - name: Smoke test
+        if: inputs.deploy_frontend
+        run: |
+          URL=${{ steps.site.outputs.url }}
+          curl -fsS --retry 10 --retry-delay 6 --retry-all-errors "$URL/" | grep -q '<div id="root">'
+          echo "site is up"
+          if [ "${{ inputs.stack }}" = "api" ] && [ "${{ inputs.image_tag }}" != "none" ]; then
+            curl -fsS --retry 15 --retry-delay 8 --retry-all-errors "$URL/api/health"
+            curl -fsS "$URL/api/services" >/dev/null
+            echo "API is up"
+          fi

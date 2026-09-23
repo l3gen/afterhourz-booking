@@ -1,0 +1,12 @@
+# Runtime dependencies, pinned to the versions the test suite passes with.
+# Dependabot opens PRs for updates; CI must be green before they merge.
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+boto3==1.43.98
+pydantic==2.13.5
+pydantic-settings==2.15.0
+PyJWT==2.14.0
+stripe==15.6.1
+google-auth==2.58.0
+google-api-python-client==2.200.0
+requests==2.34.2

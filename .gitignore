@@ -1,0 +1,27 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+# node
+node_modules/
+frontend/dist/
+# secrets and local config (never commit)
+.env
+!frontend/.env
+.env.local
+*.pem
+# terraform (commit .terraform.lock.hcl; never commit state or plans)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+plan.txt
+.build/
+crash.log
+# os / editors
+.DS_Store
+.idea/
+.vscode/

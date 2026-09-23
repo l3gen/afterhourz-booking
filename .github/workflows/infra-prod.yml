@@ -1,0 +1,22 @@
+name: Infra (prod foundation)
+
+# Changes to the always-on production layer (DynamoDB, CloudFront, DNS, alerts...).
+# Plan is shown first; the apply step waits for approval in the 'production' environment.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: prod-environment
+  cancel-in-progress: false
+
+jobs:
+  foundation:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/terraform-stack.yml
+    with:
+      env: prod
+      stack: foundation

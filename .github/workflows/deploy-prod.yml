@@ -1,0 +1,74 @@
+name: Release to production
+
+# Promotes the EXACT image that already ran in dev (built once, never rebuilt).
+# Trigger by pushing a tag like v1.2.0 on a commit that is on main, or run manually.
+# The run pauses for approval in the 'production' environment before anything changes.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag (12-char commit SHA) to release. Blank = the commit this workflow runs on."
+        required: false
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: prod-environment
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: verify artifact
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Only commits that are on main may be released
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "::error::$GITHUB_SHA is not on main"; exit 1; }
+      - id: tag
+        run: |
+          T="${{ inputs.image_tag }}"
+          echo "tag=${T:-${GITHUB_SHA::12}}" >> "$GITHUB_OUTPUT"
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/afterhourz-gha-plan
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: The image must exist (it is built by the main pipeline, never here)
+        run: |
+          aws ecr describe-images --repository-name afterhourz-api --image-ids imageTag=${{ steps.tag.outputs.tag }} >/dev/null \
+            || { echo "::error::No image tagged ${{ steps.tag.outputs.tag }}. Merge to main first so it gets built and tested in dev."; exit 1; }
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.13"
+          terraform_wrapper: false
+      - name: Fail if prod foundation has unapplied changes
+        working-directory: infra/stacks/foundation
+        run: |
+          terraform init -input=false -backend-config=envs/prod.backend.hcl -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          set +e
+          terraform plan -input=false -lock=false -detailed-exitcode -var-file=envs/prod.tfvars >/dev/null
+          code=$?
+          set -e
+          if [ "$code" = "2" ]; then
+            echo "::error::Prod foundation has pending changes. Run the 'Infra (prod foundation)' workflow first, then re-run this release."
+            exit 1
+          fi
+          [ "$code" = "0" ]
+
+  deploy:
+    needs: verify
+    uses: ./.github/workflows/terraform-stack.yml
+    with:
+      env: prod
+      stack: api
+      image_tag: ${{ needs.verify.outputs.image_tag }}
+      deploy_frontend: true

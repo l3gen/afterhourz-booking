@@ -1,0 +1,32 @@
+# Alternative to `make db api`: run the API against DynamoDB Local in containers.
+#   docker compose up --build      (then `cd frontend && npm run dev` for the site)
+services:
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    command: ["-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb"]
+    ports: ["8001:8000"]
+
+  api:
+    build: ./backend
+    depends_on: [dynamodb]
+    ports: ["8000:8000"]
+    environment:
+      ENV: local
+      DEV_LOGIN_ENABLED: "true"
+      ADMIN_EMAILS: owner@example.com
+      TABLE_NAME: afterhourz-local
+      DYNAMODB_ENDPOINT_URL: http://dynamodb:8000
+      AWS_ACCESS_KEY_ID: local
+      AWS_SECRET_ACCESS_KEY: local
+      AWS_REGION: us-east-1
+    # Create the table on first start, then serve.
+    entrypoint: ["sh", "-c"]
+    command:
+      - >
+        python -c "
+        import boto3, sys; sys.path.insert(0, '/srv');
+        from app.schema import TABLE_DEFINITION as T;
+        d = boto3.resource('dynamodb', endpoint_url='http://dynamodb:8000', region_name='us-east-1');
+        names = [t.name for t in d.tables.all()];
+        d.create_table(TableName='afterhourz-local', **T) if 'afterhourz-local' not in names else None
+        " && exec uvicorn app.main:app --host 0.0.0.0 --port 8000

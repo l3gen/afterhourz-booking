@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  pull_request:
+  workflow_call: # reused by deploy-dev so nothing deploys without passing the same checks
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (lint, test, audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+      - run: pip install -r backend/requirements-dev.txt
+      - name: Lint and format check
+        run: |
+          ruff check backend lambdas
+          ruff format --check backend lambdas
+      - name: API tests (DynamoDB is mocked with moto)
+        run: python -m pytest
+        working-directory: backend
+      - name: Lambda tests (reminders, cost reaper, cost analyst)
+        run: python -m pytest
+        working-directory: lambdas
+      - name: Dependency vulnerability audit
+        run: pip install pip-audit && pip-audit -r backend/requirements.txt
+
+  frontend:
+    name: Frontend (lint, test, build, audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
+
+  docker:
+    name: Container (build, scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: backend
+          load: true
+          push: false
+          tags: afterhourz-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test the container starts and answers health checks
+        run: |
+          docker run -d --name api -p 8000:8000 -e ENV=local afterhourz-api:ci
+          for i in $(seq 1 20); do curl -fs localhost:8000/api/health && exit 0; sleep 1; done
+          docker logs api; exit 1
+      - name: Trivy vulnerability scan (fails on fixable HIGH/CRITICAL)
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest \
+            image --exit-code 1 --severity HIGH,CRITICAL --ignore-unfixed afterhourz-api:ci
+
+  terraform:
+    name: Terraform (fmt, validate, lint, security)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.13"
+      - run: terraform fmt -check -recursive infra
+      - name: Validate every root module
+        run: |
+          for dir in bootstrap stacks/foundation stacks/api; do
+            echo "::group::validate $dir"
+            terraform -chdir=infra/$dir init -backend=false -input=false
+            terraform -chdir=infra/$dir validate
+            echo "::endgroup::"
+          done
+      - uses: terraform-linters/setup-tflint@v4
+      - run: tflint --recursive --config "$GITHUB_WORKSPACE/infra/.tflint.hcl"
+        working-directory: infra
+      - name: Checkov security scan
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: infra
+          framework: terraform
+          # Start informational; flip to false once the initial findings are triaged.
+          soft_fail: true
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  workflows:
+    name: Lint workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint:latest -color
+
+  # Single required status check for branch protection: it fails if ANY job above failed.
+  ci-ok:
+    name: ci-ok
+    if: always()
+    needs: [backend, frontend, docker, terraform, secrets, workflows]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo '${{ toJSON(needs) }}'
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "One or more CI jobs failed"; exit 1
+          fi

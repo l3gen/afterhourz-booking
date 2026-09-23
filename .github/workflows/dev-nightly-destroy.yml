@@ -1,0 +1,56 @@
+name: Dev nightly destroy
+
+# Tears down the expensive dev resources (ALB, Fargate, VPC) every night. Data (DynamoDB),
+# the static site (S3/CloudFront) and DNS live in the foundation stack and are untouched.
+# 03:00 UTC = 11pm US Eastern (10pm in winter). Bring dev back with the "Dev up" workflow.
+#
+# Safety net: an AWS-side scheduled Lambda (cost reaper) sweeps dev at 4am ET regardless.
+# Note: GitHub pauses scheduled workflows after 60 days without repo activity.
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: dev-environment
+  cancel-in-progress: false
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_VAR_state_bucket: ${{ vars.TF_STATE_BUCKET }}
+      TF_VAR_ecr_repository_url: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/afterhourz-api
+      TF_VAR_image_tag: none
+    defaults:
+      run:
+        working-directory: infra/stacks/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/afterhourz-gha-deploy-dev
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.13"
+          terraform_wrapper: false
+      - run: terraform init -input=false -backend-config=envs/dev.backend.hcl -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+      - name: Destroy dev API stack
+        run: terraform destroy -auto-approve -input=false -var-file=envs/dev.tfvars
+
+      # Terraform only removes what it created and tracks. This asks AWS directly
+      # whether anything is still billing, and fails the job if it is.
+      - name: Verify nothing is still billing
+        working-directory: .
+        run: |
+          chmod +x infra/scripts/verify-teardown.sh
+          infra/scripts/verify-teardown.sh dev | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - run: echo "Dev API stack destroyed. Run 'Dev up' to bring it back." >> "$GITHUB_STEP_SUMMARY"
