@@ -1,6 +1,6 @@
 env              = "prod"
-admin_emails     = "dw602481@gmail.com"
-google_client_id = ""
+admin_emails     = "linuxsmart9@gmail.com"
+google_client_id = "402642945384-vm98u3e7eva6ou991hl3q8re2h5up6vl.apps.googleusercontent.com"
 vpc_cidr         = "10.30.0.0/16"
 
 # Two on-demand tasks in two AZs; a rolling deploy never drops below 2 healthy.
