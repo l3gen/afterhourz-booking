@@ -38,7 +38,7 @@ jobs:
         run: |
           T="${{ inputs.image_tag }}"
           echo "tag=${T:-${GITHUB_SHA::12}}" >> "$GITHUB_OUTPUT"
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{ vars.AWS_ACCOUNT_ID }}:role/afterhourz-gha-plan
           aws-region: ${{ vars.AWS_REGION }}
