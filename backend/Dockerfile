@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
-FROM python:3.11-slim AS builder
+FROM python:3.14-slim AS builder
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /build
 COPY requirements.txt .
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install -r requirements.txt \
  && /opt/venv/bin/pip uninstall -y setuptools wheel
 
-FROM python:3.11-slim
+FROM python:3.14-slim
 ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 # The runtime needs no packaging tools. Removing pip/setuptools/wheel drops their vendored
 # libraries, which is where Trivy keeps finding fixable HIGH CVEs in the base image.
