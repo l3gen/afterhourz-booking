@@ -17,3 +17,9 @@ variable "dmarc_report_email" {
   type        = string
   description = "Where DMARC aggregate reports go."
 }
+
+variable "github_sub_prefix" {
+  type        = string
+  default     = ""
+  description = "OIDC sub claim prefix when GitHub issues immutable subjects, e.g. repo:OWNER@123/REPO@456. Empty = repo:OWNER/REPO."
+}

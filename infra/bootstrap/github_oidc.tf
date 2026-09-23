@@ -9,20 +9,24 @@ resource "aws_iam_openid_connect_provider" "github" {
 
 locals {
   oidc_arn = aws_iam_openid_connect_provider.github.arn
+  # GitHub now issues immutable subject claims for new repos ("repo:OWNER@ID/REPO@ID:..."),
+  # which survive renames and cannot be claimed by a re-created repo of the same name.
+  # Read the exact prefix with: gh api repos/OWNER/REPO/actions/oidc/customization/sub
+  sub = var.github_sub_prefix != "" ? var.github_sub_prefix : "repo:${var.github_repo}"
   role_specs = {
     plan = {
       # read-only: PR checks and the plan half of every deploy
       subs = [
-        "repo:${var.github_repo}:pull_request",
-        "repo:${var.github_repo}:ref:refs/heads/main",
-        "repo:${var.github_repo}:ref:refs/tags/v*", # release tags (image verification + prod plan)
+        "${local.sub}:pull_request",
+        "${local.sub}:ref:refs/heads/main",
+        "${local.sub}:ref:refs/tags/v*", # release tags (image verification + prod plan)
       ]
     }
     deploy-dev = {
-      subs = ["repo:${var.github_repo}:environment:dev"]
+      subs = ["${local.sub}:environment:dev"]
     }
     deploy-prod = {
-      subs = ["repo:${var.github_repo}:environment:production"]
+      subs = ["${local.sub}:environment:production"]
     }
   }
 }
