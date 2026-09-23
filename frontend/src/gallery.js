@@ -1,11 +1,9 @@
 // The background slideshow and the gallery grid both read this list.
-// To use your real photos: drop them in public/gallery/ and list them here.
-// Tips: 1600px wide, WebP or JPG, under ~250 KB each so the site stays fast (Google ranks on speed).
+// To add photos: drop them in public/gallery/ and list them here.
+// Tips: up to ~1200px wide, WebP, under ~250 KB each so the site stays fast (Google ranks on speed).
 export const gallery = [
-  { src: '/gallery/cut-1.svg', alt: 'Skin fade with sharp line-up' },
-  { src: '/gallery/cut-2.svg', alt: 'Taper fade with textured top' },
-  { src: '/gallery/cut-3.svg', alt: 'Classic cut with beard shape-up' },
-  { src: '/gallery/cut-4.svg', alt: 'Low fade with waves' },
-  { src: '/gallery/cut-5.svg', alt: 'Kids fade' },
-  { src: '/gallery/cut-6.svg', alt: 'Beard trim and razor line' },
+  { src: '/gallery/cut-locs-lineup.webp', alt: 'Locs with a sharp geometric line-up and temple taper' },
+  { src: '/gallery/cut-twists-lineup.webp', alt: 'Twists with a crisp angled line-up and taper' },
+  { src: '/gallery/cut-afro-taper-beard.webp', alt: 'Afro taper with angled line-up and beard shape-up' },
+  { src: '/gallery/cut-waves-lineup.webp', alt: 'Waves with a sharp line-up and low taper' },
 ]
